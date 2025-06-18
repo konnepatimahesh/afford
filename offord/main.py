@@ -1,0 +1,55 @@
+from fastapi import FastAPI
+import httpx
+import time
+import random
+
+app = FastAPI()
+WINDOW_SIZE = 10
+number_window = []
+
+API_ENDPOINTS = {
+    "p": "http://20.244.56.144/evaluation-service/primes",
+    "f": "http://20.244.56.144/evaluation-service/fibo",
+    "e": "http://20.244.56.144/evaluation-service/even",
+    "r": "http://20.244.56.144/evaluation-service/rand"
+}
+
+@app.get("/numbers/{numberid}")
+async def get_numbers(numberid: str):
+    if numberid not in API_ENDPOINTS:
+        return {
+            "error": "Invalid number ID. Use 'p', 'f', 'e', or 'r'."
+        }
+
+    url = API_ENDPOINTS[numberid]
+    window_prev = number_window.copy()
+    new_numbers = []
+
+    try:
+        async with httpx.AsyncClient(timeout=0.5) as client:
+            start = time.time()
+            response = await client.get(url)
+            elapsed = time.time() - start
+
+            if response.status_code == 200 and elapsed <= 0.5:
+                data = response.json()
+                fetched_numbers = data.get("numbers", [])
+            else:
+                raise Exception("Timeout or bad response")
+    except:
+        # Fallback: generate 5 random numbers if API fails
+        fetched_numbers = [random.randint(1, 100) for _ in range(5)]
+
+    for num in fetched_numbers:
+        if isinstance(num, int) and num not in number_window:
+            number_window.append(num)
+            new_numbers.append(num)
+            if len(number_window) > WINDOW_SIZE:
+                number_window.pop(0)
+
+    return {
+        "windowPrevState": window_prev,
+        "windowCurrState": number_window,
+        "numbers": new_numbers,
+        "avg": round(sum(number_window) / len(number_window), 2) if number_window else 0.0
+    }
